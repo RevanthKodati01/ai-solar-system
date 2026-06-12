@@ -1,0 +1,5 @@
+{
+  "name": "ai-solar-data",
+  "compatibility_date": "2026-06-12",
+  "main": "worker/openrouter-proxy.js"
+}

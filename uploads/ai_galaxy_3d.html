@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>The AI Galaxy - live map of which AI models the world is using</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  :root{
+    --bg:#04060e; --panel:rgba(9,14,29,.88); --border:#1c2746;
+    --txt:#e9eefc; --sub:#5f6e91; --sub2:#96a8cd;
+    --cyan:#00e5ff; --green:#4ade80; --red:#ff5470;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    color:var(--txt);-webkit-user-select:none;user-select:none}
+  canvas{display:block}
+  .mono{font-family:"SF Mono",ui-monospace,"Cascadia Mono",Consolas,monospace}
+
+  /* ---------- HUD ---------- */
+  #hud{position:fixed;inset:0;pointer-events:none;z-index:10}
+  #hud > *{pointer-events:auto}
+
+  #brand{position:absolute;top:18px;left:22px}
+  #brand h1{font-size:17px;letter-spacing:2px;color:var(--sub2);font-weight:700;font-family:ui-monospace,monospace}
+  #brand p{font-size:12.5px;color:var(--sub);margin-top:4px;max-width:420px;line-height:1.5}
+
+  #live{position:absolute;top:18px;right:22px;display:flex;align-items:center;gap:8px;
+    background:rgba(13,24,48,.85);border:1px solid #1d2c50;border-radius:20px;padding:7px 16px}
+  #live .dot{width:9px;height:9px;border-radius:50%;background:var(--red);animation:blink 1.3s infinite}
+  #live span{color:var(--red);font-weight:700;font-size:12px;letter-spacing:2px;font-family:ui-monospace,monospace}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+
+  #counter{position:absolute;top:64px;right:22px;text-align:right}
+  #counter .num{font-family:ui-monospace,monospace;font-size:20px;font-weight:700;color:var(--cyan);font-variant-numeric:tabular-nums}
+  #counter .lbl{font-size:10.5px;color:var(--sub);letter-spacing:1.5px;margin-top:2px;font-family:ui-monospace,monospace}
+
+  /* ---------- system panel ---------- */
+  #panel{position:absolute;left:22px;bottom:96px;width:330px;background:var(--panel);
+    border:1px solid var(--border);border-radius:14px;padding:16px 18px;backdrop-filter:blur(8px);
+    transition:opacity .35s, transform .35s}
+  #panel.hidden{opacity:0;transform:translateY(14px);pointer-events:none}
+  #panel .lab{font-size:22px;font-weight:800}
+  #panel .labsub{font-size:12.5px;color:var(--sub2);margin:4px 0 12px}
+  #panel table{width:100%;border-collapse:collapse;font-size:12.5px}
+  #panel th{color:var(--sub);font-weight:500;text-align:left;padding:4px 0;font-family:ui-monospace,monospace;font-size:10px;letter-spacing:1px}
+  #panel td{padding:6px 0;border-top:1px solid #141d38;color:var(--sub2)}
+  #panel td:first-child{color:var(--txt);font-weight:600}
+  #panel td:last-child, #panel th:last-child{text-align:right}
+  .up{color:var(--green)!important}.down{color:var(--red)!important}
+
+  /* ---------- galaxy leaderboard ---------- */
+  #board{position:absolute;left:22px;bottom:96px;width:300px;background:var(--panel);
+    border:1px solid var(--border);border-radius:14px;padding:16px 18px;backdrop-filter:blur(8px);
+    transition:opacity .35s, transform .35s}
+  #board.hidden{opacity:0;transform:translateY(14px);pointer-events:none}
+  #board h3{font-size:10.5px;letter-spacing:1.5px;color:var(--sub);font-family:ui-monospace,monospace;margin-bottom:10px}
+  #board .row{display:flex;align-items:center;gap:9px;padding:5px 0;font-size:13px;cursor:pointer;border-radius:6px}
+  #board .row:hover{background:rgba(255,255,255,.05)}
+  #board .sw{width:9px;height:9px;border-radius:50%;flex:none}
+  #board .nm{color:var(--sub2);flex:1}
+  #board .bar{height:5px;border-radius:3px;flex:none}
+  #board .val{font-weight:700;width:54px;text-align:right;font-variant-numeric:tabular-nums}
+
+  /* ---------- planet card ---------- */
+  #card{position:absolute;width:250px;background:var(--panel);border:1px solid #24365f;border-radius:12px;
+    padding:13px 15px;backdrop-filter:blur(8px);display:none;z-index:12}
+  #card .t{font-weight:800;font-size:15px}
+  #card .s{color:var(--sub2);font-size:11.5px;margin:2px 0 9px}
+  #card .kv{display:flex;justify-content:space-between;font-size:12px;padding:3.5px 0;color:var(--sub2)}
+  #card .kv b{color:var(--txt)}
+
+  /* ---------- pager ---------- */
+  #pager{position:absolute;bottom:30px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:12px}
+  #pager .dot{width:9px;height:9px;border-radius:6px;background:#3c486b;cursor:pointer;transition:all .25s}
+  #pager .dot.active{width:26px;background:var(--cyan)}
+  .navarrow{position:absolute;top:50%;transform:translateY(-50%);width:46px;height:46px;border-radius:50%;
+    background:rgba(13,24,48,.8);border:1px solid #243150;color:var(--sub2);font-size:18px;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;transition:all .2s}
+  .navarrow:hover{border-color:var(--cyan);color:var(--cyan)}
+  #prev{left:18px}#next{right:18px}
+
+  #galaxyBtn{position:absolute;bottom:26px;right:22px;background:rgba(13,24,48,.85);border:1px solid #243150;
+    color:var(--sub2);font-size:12px;padding:9px 16px;border-radius:20px;cursor:pointer;transition:all .2s;
+    font-family:ui-monospace,monospace;letter-spacing:1px}
+  #galaxyBtn:hover{border-color:var(--cyan);color:var(--cyan)}
+
+  #hint{position:absolute;bottom:30px;left:22px;font-size:11.5px;color:var(--sub)}
+  #legend{position:absolute;bottom:62px;left:50%;transform:translateX(-50%);font-size:11px;color:var(--sub);
+    font-family:ui-monospace,monospace;letter-spacing:.5px;white-space:nowrap}
+
+  /* ---------- floating labels ---------- */
+  .lbl3d{position:absolute;pointer-events:auto;cursor:pointer;text-align:center;transform:translate(-50%,-50%);
+    text-shadow:0 2px 8px rgba(0,0,0,.9);transition:opacity .3s;white-space:nowrap}
+  .lbl3d .n{font-weight:800;font-size:15px}
+  .lbl3d .v{font-size:11px;color:var(--sub2);font-variant-numeric:tabular-nums}
+  .lbl3d.small .n{font-size:12px;font-weight:700}
+  .lbl3d.small .v{font-size:10px}
+
+  /* ---------- loader ---------- */
+  #loader{position:fixed;inset:0;background:var(--bg);z-index:50;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:14px;transition:opacity .6s}
+  #loader.gone{opacity:0;pointer-events:none}
+  #loader .ring{width:46px;height:46px;border:3px solid #1c2746;border-top-color:var(--cyan);border-radius:50%;
+    animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  #loader p{color:var(--sub);font-size:13px;font-family:ui-monospace,monospace;letter-spacing:1px}
+
+  #demoTag{position:absolute;top:18px;left:50%;transform:translateX(-50%);font-size:10.5px;color:#6d5a2e;
+    background:rgba(40,32,12,.6);border:1px solid #4a3d1a;border-radius:12px;padding:4px 12px;
+    font-family:ui-monospace,monospace;letter-spacing:1px}
+
+  @media (max-width:760px){
+    #panel,#board{width:calc(100% - 44px);bottom:120px;max-height:34vh;overflow:auto}
+    #brand p{display:none}
+    #counter .num{font-size:15px}
+    .navarrow{display:none}
+    #legend{display:none}
+  }
+  @media (prefers-reduced-motion:reduce){
+    #live .dot{animation:none}
+  }
+</style>
+</head>
+<body>
+<div id="loader"><div class="ring"></div><p>BUILDING THE GALAXY...</p></div>
+
+<div id="hud">
+  <div id="brand">
+    <h1>THE AI GALAXY</h1>
+    <p>Every sun is an AI lab. Every planet is one of its models - planet size = usage,
+       orbit = release date (innermost = newest). Drag to look around, scroll to zoom,
+       tap a sun to fly in.</p>
+  </div>
+  <div id="demoTag">DEMO DATA - LIVE FEED NEXT</div>
+  <div id="live"><div class="dot"></div><span>LIVE</span></div>
+  <div id="counter"><div class="num" id="tok">0</div><div class="lbl">TOKENS TODAY</div></div>
+
+  <div id="board" class="hidden"></div>
+
+  <div id="panel" class="hidden">
+    <div class="lab" id="pLab"></div>
+    <div class="labsub" id="pSub"></div>
+    <table>
+      <thead><tr><th>MODEL</th><th>SHARE</th><th>24H</th><th>RELEASED</th></tr></thead>
+      <tbody id="pRows"></tbody>
+    </table>
+  </div>
+
+  <div id="card">
+    <div class="t" id="cT"></div><div class="s" id="cS"></div>
+    <div class="kv"><span>Share of all tokens</span><b id="cShare"></b></div>
+    <div class="kv"><span>24h trend</span><b id="cTrend"></b></div>
+    <div class="kv"><span>Tokens today</span><b id="cTok"></b></div>
+    <div class="kv"><span>Released</span><b id="cRel"></b></div>
+  </div>
+
+  <button class="navarrow" id="prev">&#9664;</button>
+  <button class="navarrow" id="next">&#9654;</button>
+  <div id="legend"></div>
+  <div id="pager"></div>
+  <button id="galaxyBtn">GALAXY VIEW</button>
+  <div id="hint">drag - look around &nbsp;|&nbsp; scroll / pinch - zoom &nbsp;|&nbsp; click sun - fly in</div>
+</div>
+
+<div id="labels"></div>
+
+<script>
+"use strict";
+/* ============================================================
+   THE AI GALAXY - 3D live map of AI model usage
+   Demo data below mirrors the exact shape the live API
+   (FastAPI poller over OpenRouter public rankings) will return.
+   ============================================================ */
+
+const LABS = [
+  {name:"OpenAI",   color:0x34c759, share:27.4, trend:+1.2, models:[
+    {name:"GPT-5",      share:14.8, trend:+0.8, released:"2025-08", tok:"431B"},
+    {name:"GPT-5 mini", share:7.6,  trend:+0.5, released:"2025-08", tok:"221B"},
+    {name:"o4-mini",    share:3.1,  trend:-0.2, released:"2025-04", tok:"90B"},
+    {name:"GPT-4o",     share:1.9,  trend:-0.6, released:"2024-05", tok:"55B"}]},
+  {name:"Anthropic", color:0xff9540, share:24.1, trend:+2.8, models:[
+    {name:"Opus 4.8",   share:6.4,  trend:+0.4, released:"2026-03", tok:"186B"},
+    {name:"Sonnet 4.6", share:12.3, trend:+2.1, released:"2025-11", tok:"358B"},
+    {name:"Haiku 4.5",  share:5.4,  trend:-0.3, released:"2025-10", tok:"158B"}]},
+  {name:"Google",   color:0x409cff, share:17.6, trend:+0.4, models:[
+    {name:"Gemini 3 Pro",   share:9.8, trend:+0.3, released:"2025-11", tok:"285B"},
+    {name:"Gemini 3 Flash", share:7.8, trend:+0.1, released:"2025-12", tok:"227B"}]},
+  {name:"DeepSeek", color:0x7c4dff, share:9.2, trend:-0.8, models:[
+    {name:"V4", share:6.0, trend:-0.5, released:"2025-12", tok:"175B"},
+    {name:"R2", share:3.2, trend:-0.3, released:"2025-09", tok:"93B"}]},
+  {name:"Meta",     color:0x00c8ff, share:6.3, trend:-1.1, models:[
+    {name:"Llama 4 Maverick", share:3.9, trend:-0.7, released:"2025-04", tok:"114B"},
+    {name:"Llama 4 Scout",    share:2.4, trend:-0.4, released:"2025-04", tok:"70B"}]},
+  {name:"xAI",      color:0xe8e8f2, share:5.1, trend:+0.9, models:[
+    {name:"Grok 4",      share:3.4, trend:+0.6, released:"2025-07", tok:"99B"},
+    {name:"Grok 4 fast", share:1.7, trend:+0.3, released:"2025-08", tok:"50B"}]},
+  {name:"Alibaba",  color:0xf472b6, share:4.4, trend:+1.6, models:[
+    {name:"Qwen3 Max",   share:2.6, trend:+1.0, released:"2025-09", tok:"76B"},
+    {name:"Qwen3 Coder", share:1.8, trend:+0.6, released:"2025-07", tok:"52B"}]},
+  {name:"Mistral",  color:0xffd640, share:2.6, trend:-0.2, models:[
+    {name:"Mistral Large 3", share:1.7, trend:-0.1, released:"2025-12", tok:"50B"},
+    {name:"Mistral Small",   share:0.9, trend:-0.1, released:"2025-06", tok:"26B"}]}
+];
+
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* ---------------- renderer / scene ---------------- */
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.5, 6000);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+scene.add(new THREE.AmbientLight(0x223044, 0.85));
+
+/* ---------------- canvas texture helpers ---------------- */
+function noise(ctx,w,h,alpha){
+  const id = ctx.getImageData(0,0,w,h), d = id.data;
+  for(let i=0;i<d.length;i+=4){
+    const n = (Math.random()-0.5)*alpha;
+    d[i]+=n; d[i+1]+=n; d[i+2]+=n;
+  }
+  ctx.putImageData(id,0,0);
+}
+function hexToRgb(hex){return [(hex>>16)&255,(hex>>8)&255,hex&255];}
+function shade(rgb,f){return `rgb(${rgb.map(c=>Math.max(0,Math.min(255,Math.round(c*f)))).join(",")})`;}
+
+function planetTexture(colorHex, kind, seed){
+  const w=512,h=256, c=document.createElement("canvas"); c.width=w;c.height=h;
+  const x=c.getContext("2d"); const rgb=hexToRgb(colorHex);
+  let rnd = seed;
+  const rand = ()=> (rnd = (rnd*16807)%2147483647) / 2147483647;
+  if(kind==="gas"){
+    // banded gas giant
+    let y=0;
+    while(y<h){
+      const bh = 8 + rand()*26;
+      const f = 0.55 + rand()*0.75;
+      const g = x.createLinearGradient(0,y,0,y+bh);
+      g.addColorStop(0, shade(rgb, f));
+      g.addColorStop(0.5, shade(rgb, f*1.12));
+      g.addColorStop(1, shade(rgb, f*0.9));
+      x.fillStyle=g; x.fillRect(0,y,w,bh);
+      y+=bh;
+    }
+    // swirl storms
+    for(let i=0;i<10;i++){
+      const sx=rand()*w, sy=rand()*h, r=4+rand()*16;
+      const g=x.createRadialGradient(sx,sy,0,sx,sy,r);
+      g.addColorStop(0, shade(rgb, 1.35));
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      x.fillStyle=g;
+      x.beginPath(); x.ellipse(sx,sy,r*1.8,r,0,0,6.3); x.fill();
+    }
+    noise(x,w,h,18);
+  } else {
+    // rocky world: base + continents + craters
+    x.fillStyle = shade(rgb,0.62); x.fillRect(0,0,w,h);
+    for(let i=0;i<26;i++){
+      const sx=rand()*w, sy=rand()*h, r=12+rand()*55;
+      const g=x.createRadialGradient(sx,sy,0,sx,sy,r);
+      g.addColorStop(0, shade(rgb, 0.85+rand()*0.5));
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      x.fillStyle=g; x.beginPath(); x.arc(sx,sy,r,0,6.3); x.fill();
+    }
+    for(let i=0;i<40;i++){
+      const sx=rand()*w, sy=rand()*h, r=1+rand()*5;
+      x.fillStyle="rgba(0,0,0,0.25)";
+      x.beginPath(); x.arc(sx,sy,r,0,6.3); x.fill();
+      x.fillStyle="rgba(255,255,255,0.10)";
+      x.beginPath(); x.arc(sx-r*0.3,sy-r*0.3,r*0.6,0,6.3); x.fill();
+    }
+    noise(x,w,h,26);
+  }
+  const t = new THREE.CanvasTexture(c);
+  return t;
+}
+
+function sunTexture(colorHex){
+  const w=512,h=256,c=document.createElement("canvas");c.width=w;c.height=h;
+  const x=c.getContext("2d");const rgb=hexToRgb(colorHex);
+  x.fillStyle=shade(rgb,1.0);x.fillRect(0,0,w,h);
+  for(let i=0;i<900;i++){
+    const sx=Math.random()*w, sy=Math.random()*h, r=1+Math.random()*7;
+    const g=x.createRadialGradient(sx,sy,0,sx,sy,r);
+    const f=0.8+Math.random()*0.8;
+    g.addColorStop(0,shade(rgb,f*1.4));
+    g.addColorStop(1,"rgba(0,0,0,0)");
+    x.fillStyle=g;x.beginPath();x.arc(sx,sy,r,0,6.3);x.fill();
+  }
+  return new THREE.CanvasTexture(c);
+}
+
+function glowTexture(colorHex, inner){
+  const s=256,c=document.createElement("canvas");c.width=s;c.height=s;
+  const x=c.getContext("2d");const rgb=hexToRgb(colorHex);
+  const g=x.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2);
+  g.addColorStop(0,`rgba(${rgb.join(",")},${inner})`);
+  g.addColorStop(0.35,`rgba(${rgb.join(",")},${inner*0.45})`);
+  g.addColorStop(1,"rgba(0,0,0,0)");
+  x.fillStyle=g;x.fillRect(0,0,s,s);
+  return new THREE.CanvasTexture(c);
+}
+</script>
+
+
+<script>
+"use strict";
+/* ---------------- starfield + galaxy dust ---------------- */
+(function(){
+  const n=6500, pos=new Float32Array(n*3), col=new Float32Array(n*3);
+  for(let i=0;i<n;i++){
+    const r = 900 + Math.random()*2600;
+    const th = Math.random()*Math.PI*2, ph = Math.acos(2*Math.random()-1);
+    pos[i*3]   = r*Math.sin(ph)*Math.cos(th);
+    pos[i*3+1] = r*Math.cos(ph);
+    pos[i*3+2] = r*Math.sin(ph)*Math.sin(th);
+    const b = 0.45 + Math.random()*0.55, tint = Math.random();
+    col[i*3]=b*(tint<0.2?1:0.8); col[i*3+1]=b*0.85; col[i*3+2]=b;
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(pos,3));
+  g.setAttribute("color", new THREE.BufferAttribute(col,3));
+  scene.add(new THREE.Points(g, new THREE.PointsMaterial({size:2.2,vertexColors:true,sizeAttenuation:true,transparent:true,opacity:0.9})));
+})();
+(function(){ // spiral dust on the galactic plane
+  const n=5200, pos=new Float32Array(n*3), col=new Float32Array(n*3);
+  for(let i=0;i<n;i++){
+    const arm = Math.random()<0.5?0:Math.PI;
+    const t = 0.4 + Math.random()*4.4;
+    const r = 26*Math.exp(0.62*t);
+    const a = t + arm + (Math.random()-0.5)*0.34;
+    pos[i*3]   = Math.cos(a)*r;
+    pos[i*3+1] = (Math.random()-0.5)*14;
+    pos[i*3+2] = Math.sin(a)*r*0.82;
+    const b = 0.10 + Math.random()*0.16;
+    col[i*3]=b*1.1; col[i*3+1]=b*1.05; col[i*3+2]=b*1.4;
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(pos,3));
+  g.setAttribute("color", new THREE.BufferAttribute(col,3));
+  scene.add(new THREE.Points(g, new THREE.PointsMaterial({size:3.2,vertexColors:true,transparent:true,opacity:0.7,depthWrite:false})));
+})();
+
+/* ---------------- build systems ---------------- */
+const systems = [];
+const clickableSuns = [], clickablePlanets = [];
+const labelsRoot = document.getElementById("labels");
+
+LABS.forEach((lab, li)=>{
+  const angle = (li / LABS.length) * Math.PI * 2 - Math.PI/2;
+  const ringR = 320 + (li%2)*70;
+  const pos = new THREE.Vector3(Math.cos(angle)*ringR, (Math.random()-0.5)*46, Math.sin(angle)*ringR*0.85);
+
+  const group = new THREE.Group();
+  group.position.copy(pos);
+  group.rotation.x = (Math.random()-0.5)*0.5;
+  group.rotation.z = (Math.random()-0.5)*0.3;
+  scene.add(group);
+
+  const sunR = 7 + lab.share*0.5;
+  const sun = new THREE.Mesh(
+    new THREE.SphereGeometry(sunR, 40, 24),
+    new THREE.MeshBasicMaterial({map:sunTexture(lab.color)})
+  );
+  group.add(sun);
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+    map:glowTexture(lab.color,0.9), blending:THREE.AdditiveBlending, depthWrite:false, transparent:true}));
+  glow.scale.setScalar(sunR*7.5);
+  group.add(glow);
+  const light = new THREE.PointLight(lab.color, 1.5, sunR*30, 2);
+  group.add(light);
+
+  sun.userData = {type:"sun", lab:li};
+  clickableSuns.push(sun);
+
+  // models sorted newest-first -> innermost orbit
+  const sorted = [...lab.models].sort((a,b)=> b.released.localeCompare(a.released));
+  const planets = [];
+  sorted.forEach((m, mi)=>{
+    const orbitR = sunR*1.7 + 16 + mi*15;
+    // orbit ring
+    const ringPts = [];
+    for(let k=0;k<=120;k++){
+      const a=k/120*Math.PI*2;
+      ringPts.push(new THREE.Vector3(Math.cos(a)*orbitR, 0, Math.sin(a)*orbitR));
+    }
+    const ring = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(ringPts),
+      new THREE.LineBasicMaterial({color:0x8a9ac4, transparent:true, opacity:0.22}));
+    group.add(ring);
+
+    const pr = 1.4 + Math.sqrt(m.share)*1.25;
+    const kind = pr > 4 ? "gas" : "rocky";
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(pr, 30, 20),
+      new THREE.MeshPhongMaterial({map:planetTexture(lab.color, kind, 1000+li*97+mi*31), shininess:8})
+    );
+    mesh.rotation.z = (Math.random()-0.5)*0.5;
+    mesh.userData = {type:"planet", lab:li, model:m};
+    group.add(mesh);
+    clickablePlanets.push(mesh);
+
+    // ring system on the largest gas planet of big labs
+    if(kind==="gas" && m.share>9){
+      const rg = new THREE.Mesh(
+        new THREE.RingGeometry(pr*1.45, pr*2.2, 48),
+        new THREE.MeshBasicMaterial({color:lab.color, side:THREE.DoubleSide, transparent:true, opacity:0.28}));
+      rg.rotation.x = Math.PI/2 - 0.35;
+      mesh.add(rg);
+    }
+    planets.push({mesh, ring, orbitR, a:Math.random()*Math.PI*2, speed:(reduceMotion?0:0.16/Math.sqrt(orbitR))});
+  });
+
+  const outer = sunR*1.7 + 16 + (sorted.length-1)*15;
+
+  // HTML label for the sun
+  const el = document.createElement("div");
+  el.className = "lbl3d";
+  el.innerHTML = `<div class="n" style="color:#${lab.color.toString(16).padStart(6,"0")}">${lab.name}</div>
+                  <div class="v"><span class="shareTxt"></span> <span class="trendTxt"></span></div>`;
+  el.addEventListener("click", ()=>focusSystem(li));
+  labelsRoot.appendChild(el);
+
+  // labels for planets (visible only when focused)
+  const pl = sorted.map((m)=> {
+    const e = document.createElement("div");
+    e.className = "lbl3d small";
+    e.innerHTML = `<div class="n">${m.name}</div><div class="v"></div>`;
+    e.style.opacity = 0;
+    labelsRoot.appendChild(e);
+    return e;
+  });
+
+  systems.push({lab, group, sun, sunR, outer, planets, el, pl, sorted});
+});
+
+/* ---------------- camera controls ---------------- */
+const ctrl = {
+  target:new THREE.Vector3(0,0,0), theta:0.9, phi:1.12, radius:760,
+  goal:{target:new THREE.Vector3(0,0,0), theta:0.9, phi:1.12, radius:760}
+};
+function applyCamera(){
+  const t=ctrl.target;
+  camera.position.set(
+    t.x + ctrl.radius*Math.sin(ctrl.phi)*Math.cos(ctrl.theta),
+    t.y + ctrl.radius*Math.cos(ctrl.phi),
+    t.z + ctrl.radius*Math.sin(ctrl.phi)*Math.sin(ctrl.theta));
+  camera.lookAt(t);
+}
+let dragging=false, px=0, py=0, pinchD=0, moved=0;
+const cv = renderer.domElement;
+cv.addEventListener("pointerdown", e=>{dragging=true;moved=0;px=e.clientX;py=e.clientY;});
+addEventListener("pointerup", ()=>dragging=false);
+addEventListener("pointermove", e=>{
+  if(!dragging) return;
+  const dx=e.clientX-px, dy=e.clientY-py; px=e.clientX; py=e.clientY;
+  moved += Math.abs(dx)+Math.abs(dy);
+  ctrl.goal.theta += dx*0.0045;
+  ctrl.goal.phi = Math.min(2.6, Math.max(0.35, ctrl.goal.phi - dy*0.0045));
+});
+cv.addEventListener("wheel", e=>{
+  e.preventDefault();
+  ctrl.goal.radius = Math.min(2400, Math.max(36, ctrl.goal.radius * (1 + e.deltaY*0.0011)));
+},{passive:false});
+cv.addEventListener("touchstart", e=>{
+  if(e.touches.length===2){
+    pinchD = Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+  }
+},{passive:true});
+cv.addEventListener("touchmove", e=>{
+  if(e.touches.length===2){
+    const d = Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+    ctrl.goal.radius = Math.min(2400, Math.max(36, ctrl.goal.radius * (pinchD/d)));
+    pinchD = d;
+  }
+},{passive:true});
+
+/* ---------------- raycast clicks ---------------- */
+const ray = new THREE.Raycaster(), ptr = new THREE.Vector2();
+const card = document.getElementById("card");
+cv.addEventListener("click", e=>{
+  if(moved>8) return;            // it was a drag
+  ptr.x=(e.clientX/innerWidth)*2-1; ptr.y=-(e.clientY/innerHeight)*2+1;
+  ray.setFromCamera(ptr, camera);
+  const hp = ray.intersectObjects(clickablePlanets);
+  if(hp.length && mode==="system"){
+    const u=hp[0].object.userData, m=u.model, lab=LABS[u.lab];
+    document.getElementById("cT").textContent=m.name;
+    document.getElementById("cS").textContent=lab.name;
+    document.getElementById("cShare").textContent=m.share.toFixed(1)+"%";
+    const tEl=document.getElementById("cTrend");
+    tEl.textContent=(m.trend>=0?"+":"")+m.trend.toFixed(1)+"%";
+    tEl.className=m.trend>=0?"up":"down";
+    document.getElementById("cTok").textContent=m.tok;
+    document.getElementById("cRel").textContent=m.released;
+    card.style.display="block";
+    card.style.left=Math.min(innerWidth-270, e.clientX+16)+"px";
+    card.style.top=Math.min(innerHeight-220, e.clientY-20)+"px";
+    return;
+  }
+  const hs = ray.intersectObjects(clickableSuns);
+  if(hs.length){ focusSystem(hs[0].object.userData.lab); return; }
+  card.style.display="none";
+});
+</script>
+
+
+<script>
+"use strict";
+/* ---------------- navigation modes ---------------- */
+let mode = "galaxy", focused = -1;
+const panel = document.getElementById("panel");
+const board = document.getElementById("board");
+const pager = document.getElementById("pager");
+const legend = document.getElementById("legend");
+const cardEl = document.getElementById("card");
+
+// pager dots
+systems.forEach((s,i)=>{
+  const d=document.createElement("div");
+  d.className="dot";
+  d.addEventListener("click", ()=>focusSystem(i));
+  pager.appendChild(d);
+});
+function refreshDots(){
+  [...pager.children].forEach((d,i)=> d.classList.toggle("active", i===focused && mode==="system"));
+}
+
+// leaderboard
+function buildBoard(){
+  board.innerHTML = "<h3>THE GALAXY - LIVE SHARES</h3>";
+  const max = Math.max(...LABS.map(l=>l.share));
+  LABS.forEach((l,i)=>{
+    const r=document.createElement("div"); r.className="row";
+    const c="#"+l.color.toString(16).padStart(6,"0");
+    r.innerHTML=`<span class="sw" style="background:${c}"></span>
+      <span class="nm">${l.name}</span>
+      <span class="bar" style="background:${c};width:${(l.share/max*70).toFixed(0)}px"></span>
+      <span class="val">${l.share.toFixed(1)}%</span>`;
+    r.addEventListener("click", ()=>focusSystem(i));
+    board.appendChild(r);
+  });
+}
+buildBoard();
+
+function fillPanel(i){
+  const s=systems[i], lab=s.lab;
+  document.getElementById("pLab").textContent=lab.name;
+  document.getElementById("pLab").style.color="#"+lab.color.toString(16).padStart(6,"0");
+  document.getElementById("pSub").textContent=
+    lab.share.toFixed(1)+"% of all tokens  -  "+(lab.trend>=0?"+":"")+lab.trend.toFixed(1)+"% 24h";
+  const rows=document.getElementById("pRows"); rows.innerHTML="";
+  [...lab.models].sort((a,b)=>b.share-a.share).forEach(m=>{
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td>${m.name}</td><td>${m.share.toFixed(1)}%</td>
+      <td class="${m.trend>=0?"up":"down"}">${(m.trend>=0?"+":"")+m.trend.toFixed(1)}%</td>
+      <td>${m.released}</td>`;
+    rows.appendChild(tr);
+  });
+}
+
+function focusSystem(i){
+  focused = i; mode = "system";
+  const s = systems[i];
+  ctrl.goal.target.copy(s.group.position);
+  ctrl.goal.radius = s.outer*2.7;
+  ctrl.goal.phi = 1.05;
+  fillPanel(i);
+  panel.classList.remove("hidden");
+  board.classList.add("hidden");
+  cardEl.style.display="none";
+  legend.textContent = "orbit = release date (innermost = newest)  |  planet size = usage";
+  refreshDots();
+}
+function galaxyView(){
+  mode = "galaxy"; focused = -1;
+  ctrl.goal.target.set(0,0,0);
+  ctrl.goal.radius = 760;
+  ctrl.goal.phi = 1.12;
+  panel.classList.add("hidden");
+  board.classList.remove("hidden");
+  cardEl.style.display="none";
+  legend.textContent = "sun size = lab's share of global tokens";
+  refreshDots();
+}
+document.getElementById("galaxyBtn").addEventListener("click", galaxyView);
+document.getElementById("prev").addEventListener("click", ()=>focusSystem((focused-1+systems.length)%systems.length));
+document.getElementById("next").addEventListener("click", ()=>focusSystem((focused+1)%systems.length));
+addEventListener("keydown", e=>{
+  if(e.key==="ArrowLeft") focusSystem((focused-1+systems.length)%systems.length);
+  if(e.key==="ArrowRight") focusSystem((focused+1)%systems.length);
+  if(e.key==="Escape"||e.key==="g") galaxyView();
+});
+// swipe between systems on touch
+let swX=0, swY=0, swT=0;
+cv.addEventListener("touchstart", e=>{ if(e.touches.length===1){swX=e.touches[0].clientX; swY=e.touches[0].clientY; swT=Date.now();} },{passive:true});
+cv.addEventListener("touchend", e=>{
+  const dx=e.changedTouches[0].clientX-swX, dy=e.changedTouches[0].clientY-swY;
+  if(mode==="system" && Date.now()-swT<280 && Math.abs(dx)>90 && Math.abs(dy)<60){
+    dx<0 ? focusSystem((focused+1)%systems.length) : focusSystem((focused-1+systems.length)%systems.length);
+  }
+},{passive:true});
+
+/* ---------------- live demo ticker ---------------- */
+let tokens = 2914381002118;
+const tokEl = document.getElementById("tok");
+setInterval(()=>{                       // gentle share drift so the galaxy breathes
+  LABS.forEach(l=>{
+    l.models.forEach(m=>{ m.share = Math.max(0.3, m.share + (Math.random()-0.5)*0.04); });
+    l.share = l.models.reduce((a,m)=>a+m.share,0);
+  });
+  buildBoard();
+  if(mode==="system") fillPanel(focused);
+}, 4000);
+
+/* ---------------- per-frame loop ---------------- */
+const v3 = new THREE.Vector3();
+function projectLabel(el, worldPos, yOffsetPx, show){
+  v3.copy(worldPos).project(camera);
+  const behind = v3.z > 1;
+  if(!show || behind){ el.style.opacity = 0; el.style.pointerEvents="none"; return; }
+  el.style.opacity = 1; el.style.pointerEvents="auto";
+  el.style.left = ((v3.x*0.5+0.5)*innerWidth)+"px";
+  el.style.top  = ((-v3.y*0.5+0.5)*innerHeight + yOffsetPx)+"px";
+}
+
+const clock = new THREE.Clock();
+function tick(){
+  requestAnimationFrame(tick);
+  const dt = Math.min(clock.getDelta(), 0.05);
+
+  // ease camera toward goals
+  ctrl.target.lerp(ctrl.goal.target, 1-Math.pow(0.0018, dt));
+  ctrl.radius += (ctrl.goal.radius-ctrl.radius)*(1-Math.pow(0.0018, dt));
+  ctrl.theta  += (ctrl.goal.theta-ctrl.theta)*(1-Math.pow(0.002, dt));
+  ctrl.phi    += (ctrl.goal.phi-ctrl.phi)*(1-Math.pow(0.002, dt));
+  if(mode==="galaxy" && !dragging && !reduceMotion) ctrl.goal.theta += dt*0.018;  // slow ambient drift
+  applyCamera();
+
+  tokens += 23300000*dt;
+  tokEl.textContent = Math.floor(tokens).toLocaleString();
+
+  systems.forEach((s, si)=>{
+    s.sun.rotation.y += dt*0.05;
+    s.planets.forEach((p, pi)=>{
+      p.a += p.speed*dt*8;
+      p.mesh.position.set(Math.cos(p.a)*p.orbitR, 0, Math.sin(p.a)*p.orbitR);
+      p.mesh.rotation.y += dt*0.3;
+      // size eases toward current share
+      const target = 1.4 + Math.sqrt(s.sorted[pi].share)*1.25;
+      const cur = p.mesh.geometry.parameters.radius * p.mesh.scale.x;
+      p.mesh.scale.setScalar(p.mesh.scale.x + (target/p.mesh.geometry.parameters.radius - p.mesh.scale.x)*dt*1.5);
+    });
+
+    // labels
+    const labelY = -(s.sunR + 26) * (520/ctrl.radius);
+    projectLabel(s.el, s.group.position, Math.min(150, Math.max(26, -labelY)), true);
+    s.el.querySelector(".shareTxt").textContent = s.lab.share.toFixed(1)+"%";
+    const tt = s.el.querySelector(".trendTxt");
+    tt.textContent = (s.lab.trend>=0?"+":"")+s.lab.trend.toFixed(1);
+    tt.className = "trendTxt " + (s.lab.trend>=0?"up":"down");
+
+    const showP = (mode==="system" && si===focused && ctrl.radius < s.outer*5);
+    s.planets.forEach((p, pi)=>{
+      p.mesh.getWorldPosition(v3copy);
+      projectLabel(s.pl[pi], v3copy, -26, showP);
+      if(showP) s.pl[pi].querySelector(".v").textContent = s.sorted[pi].share.toFixed(1)+"%";
+    });
+  });
+
+  renderer.render(scene, camera);
+}
+const v3copy = new THREE.Vector3();
+applyCamera();
+tick();
+setTimeout(()=>document.getElementById("loader").classList.add("gone"), 700);
+
+addEventListener("resize", ()=>{
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+
+</body>
+</html>

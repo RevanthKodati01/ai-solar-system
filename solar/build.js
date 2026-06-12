@@ -195,7 +195,7 @@ LABS.forEach(function(lab, i){
 
   PL.push({ lab: lab, st: st, i: i, orbitPlane: orbitPlane, posG: posG, tiltG: tiltG,
             mesh: mesh, cloudMesh: cloudMesh, R: R, orbitR: orbitR,
-            angle: seededRand() * Math.PI * 2, speed: 2.2 / Math.pow(orbitR, 1.18),
+            angle: i * 2.39996 + seededRand() * 0.45, speed: 2.2 / Math.pow(orbitR, 1.18),
             moons: moons, moonLineMats: moonLineMats, el: el, sorted: sorted, extent: extent });
 });
 

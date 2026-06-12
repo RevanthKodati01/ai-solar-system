@@ -259,7 +259,7 @@ const LABS = [
 /* boot: try live data first (rewrites LABS in place), then build the scene.
    To publish without exposing an API key, deploy worker/openrouter-proxy.js
    and put its URL here: */
-window.DATA_PROXY_URL = "";
+window.DATA_PROXY_URL = "https://ai-solar-data.krevanth2001.workers.dev";
 LiveData.connectUI();
 function loadSeq(srcs){
   return srcs.reduce(function(p, src){

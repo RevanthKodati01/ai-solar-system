@@ -86,6 +86,19 @@ const LiveData = (function(){
     tag.style.borderColor = "rgba(127,200,154,.3)";
   }
 
+  /* fetch with retries — transient 502s (cold edge / upstream hiccup)
+     shouldn't strand first-time visitors on demo data */
+  function fetchData(url, opts, attempt){
+    return fetch(url, opts).then(function(res){
+      if(!res.ok) throw new Error("HTTP " + res.status);
+      return res.json();
+    }).catch(function(err){
+      if(attempt >= 2) throw err;
+      return new Promise(function(r){ setTimeout(r, 1200 * (attempt + 1)); })
+        .then(function(){ return fetchData(url, opts, attempt + 1); });
+    });
+  }
+
   function init(){
     const proxy = (typeof window.DATA_PROXY_URL === "string" && window.DATA_PROXY_URL) || "";
     const key = getKey();
@@ -94,10 +107,7 @@ const LiveData = (function(){
     const since = new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10);
     const url = proxy || ("https://openrouter.ai/api/v1/datasets/rankings-daily?start_date=" + since);
     const opts = proxy ? {} : { headers: { "Authorization": "Bearer " + key } };
-    return fetch(url, opts).then(function(res){
-      if(!res.ok) throw new Error("HTTP " + res.status);
-      return res.json();
-    }).then(function(json){
+    return fetchData(url, opts, 0).then(function(json){
       apply(json.data || json.rows || json, json.meta && json.meta.as_of);
       return true;
     }).catch(function(err){
